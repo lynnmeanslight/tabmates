@@ -1,7 +1,7 @@
 import { parseAbi } from "viem";
 
 /** Deployed on Monad Testnet (chain id 10143). */
-export const TAB_ADDRESS = "0x0000000000000000000000000000000000000000" as const; // set at deploy
+export const TAB_ADDRESS = "0x698EBb78528e2a55B14ccf3c33171CcBF8f6392f" as const;
 
 export const tabAbi = parseAbi([
   "struct Expense { address payer; uint256 amount; uint64 timestamp; string memo; address[] participants; }",

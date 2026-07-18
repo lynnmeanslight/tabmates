@@ -1,8 +1,14 @@
 import { createContext, useCallback, useContext, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAccount, useConnect, useDisconnect, useSwitchChain } from "wagmi";
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  useReadContract,
+  useSwitchChain,
+} from "wagmi";
 import { monadTestnet } from "./wagmi";
-import { EXPLORER, TAB_ADDRESS } from "./contract";
+import { EXPLORER, TAB_ADDRESS, tabAbi } from "./contract";
 import { shortAddr, addrHue } from "./lib";
 import Home from "./Home";
 import TabView from "./TabView";
@@ -78,33 +84,11 @@ export default function App() {
       </header>
 
       {!isConnected ? (
-        <div className="hero">
-          <div className="stamp">Tab</div>
-          <h2>Split the bill. Actually settle it.</h2>
-          <p>
-            Every shared-expense app ends the same way: the ledger says "you owe
-            Maya 3&nbsp;MON" and then… nothing happens. Tab keeps your group's
-            running total onchain and lets you clear your debt with a real
-            transfer, in one click, for less than a cent.
-          </p>
-          <button
-            className="accent"
-            disabled={!injectedConnector || connecting}
-            onClick={() => injectedConnector && connect({ connector: injectedConnector })}
-          >
-            {connecting ? "Connecting…" : "Connect wallet"}
-          </button>
-          <p className="fine">
-            Runs on Monad Testnet · you'll need{" "}
-            <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer">
-              faucet MON
-            </a>{" "}
-            ·{" "}
-            <a href={`${EXPLORER}/address/${TAB_ADDRESS}`} target="_blank" rel="noreferrer">
-              view the contract
-            </a>
-          </p>
-        </div>
+        <Hero
+          connecting={connecting}
+          canConnect={!!injectedConnector}
+          onConnect={() => injectedConnector && connect({ connector: injectedConnector })}
+        />
       ) : openTab === null ? (
         <Home onOpen={setOpenTab} />
       ) : (
@@ -130,5 +114,53 @@ export default function App() {
         </a>
       </p>
     </ToastCtx.Provider>
+  );
+}
+
+function Hero({
+  connecting,
+  canConnect,
+  onConnect,
+}: {
+  connecting: boolean;
+  canConnect: boolean;
+  onConnect: () => void;
+}) {
+  const { data: groupCount } = useReadContract({
+    address: TAB_ADDRESS,
+    abi: tabAbi,
+    functionName: "groupCount",
+    query: { refetchInterval: 8000 },
+  });
+
+  return (
+    <div className="hero">
+      <div className="stamp">Tab</div>
+      <h2>Split the bill. Actually settle it.</h2>
+      <p>
+        Every shared-expense app ends the same way: the ledger says "you owe
+        Maya 3&nbsp;MON" and then… nothing happens. Tab keeps your group's
+        running total onchain and lets you clear your debt with a real
+        transfer, in one click, for less than a cent.
+      </p>
+      <button className="accent" disabled={!canConnect || connecting} onClick={onConnect}>
+        {connecting ? "Connecting…" : "Connect wallet"}
+      </button>
+      <p className="fine">
+        {groupCount !== undefined && (
+          <>
+            {groupCount.toString()} tab{groupCount === 1n ? "" : "s"} open onchain ·{" "}
+          </>
+        )}
+        Runs on Monad Testnet · you'll need{" "}
+        <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer">
+          faucet MON
+        </a>{" "}
+        ·{" "}
+        <a href={`${EXPLORER}/address/${TAB_ADDRESS}`} target="_blank" rel="noreferrer">
+          view the contract
+        </a>
+      </p>
+    </div>
   );
 }
