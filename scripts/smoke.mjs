@@ -1,4 +1,4 @@
-// End-to-end smoke test against the LIVE TabMates contract on Monad testnet.
+// End-to-end smoke test against the LIVE TabMates contract on Monad mainnet.
 // Simulates two roommates: creates a tab, logs expenses, settles with real MON.
 // Usage: DEPLOYER_KEY=0x... node scripts/smoke.mjs
 import {
@@ -12,13 +12,13 @@ import {
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { readFileSync } from "node:fs";
 
-const TAB = "0x6B7DF3C263E495c319b3841c658A23E5E361d110";
+const TAB = "0xc294C7E608F79e9FfCF4eDB85e36A91E4CCBAdB9";
 
-const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
+const monad = defineChain({
+  id: 143,
+  name: "Monad",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
-  rpcUrls: { default: { http: ["https://testnet-rpc.monad.xyz"] } },
+  rpcUrls: { default: { http: ["https://rpc.monad.xyz"] } },
 });
 
 const abi = JSON.parse(
@@ -32,20 +32,52 @@ const alice = privateKeyToAccount(key);
 const bobKey = generatePrivateKey();
 const bob = privateKeyToAccount(bobKey);
 
-const pub = createPublicClient({ chain: monadTestnet, transport: http() });
-const wAlice = createWalletClient({ account: alice, chain: monadTestnet, transport: http() });
-const wBob = createWalletClient({ account: bob, chain: monadTestnet, transport: http() });
+const pub = createPublicClient({ chain: monad, transport: http() });
+const wAlice = createWalletClient({ account: alice, chain: monad, transport: http() });
+const wBob = createWalletClient({ account: bob, chain: monad, transport: http() });
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const send = async (wallet, fn, args, value) => {
-  const hash = await wallet.writeContract({
+  // pad gas 1.5×: Monad mainnet's raw estimate can out-of-gas at execution
+  const estimated = await pub.estimateContractGas({
     address: TAB,
     abi,
     functionName: fn,
     args,
+    account: wallet.account,
     ...(value ? { value } : {}),
   });
+  // Monad admission checks run against a k-block LAGGED state: a freshly
+  // funded sender can be rejected with "insufficient balance" for a couple
+  // of seconds even though the receipt is in. Retry with backoff.
+  let hash;
+  for (let attempt = 1; ; attempt++) {
+    try {
+      hash = await wallet.writeContract({
+        address: TAB,
+        abi,
+        functionName: fn,
+        args,
+        gas: (estimated * 15n) / 10n,
+        ...(value ? { value } : {}),
+      });
+      break;
+    } catch (err) {
+      if (attempt < 6 && `${err}`.includes("insufficient balance")) {
+        console.log(`  (lagged-state admission reject, retry ${attempt}…)`);
+        await wait(1000);
+        continue;
+      }
+      throw err;
+    }
+  }
   const rcpt = await pub.waitForTransactionReceipt({ hash });
-  console.log(`  ${fn} → ${rcpt.status} (${hash.slice(0, 18)}…)`);
+  if (rcpt.status !== "success") throw new Error(`${fn} reverted: ${hash}`);
+  console.log(`  ${fn} → ${rcpt.status} (${hash})`);
+  // Monad reserve-balance: senders < 10 MON need their previous tx to be
+  // ≥ k=3 blocks (1.2s) old, or value-spending txs are included-but-reverted.
+  await wait(1500);
   return rcpt;
 };
 
@@ -56,6 +88,8 @@ console.log(`bob   (fresh):    ${bob.address}`);
 console.log("\n1. funding bob with 1 MON…");
 const fundHash = await wAlice.sendTransaction({ to: bob.address, value: parseEther("1") });
 await pub.waitForTransactionReceipt({ hash: fundHash });
+// newly-funded accounts can't spend until the credit is k=3 blocks old
+await wait(1500);
 
 console.log("\n2. alice opens tab 'Flat 4B' with bob (named!)…");
 await send(wAlice, "createGroup", ["Flat 4B", "Alice", [bob.address], ["Bob"]]);
@@ -109,4 +143,4 @@ if (refund > 0n) {
   console.log(`\n6. returned ${formatEther(refund)} MON of bob's float to alice`);
 }
 
-console.log("\nSMOKE TEST PASSED — live contract behaves correctly on Monad testnet");
+console.log("\nSMOKE TEST PASSED — live contract behaves correctly on Monad mainnet");

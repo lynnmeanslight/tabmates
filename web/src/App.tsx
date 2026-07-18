@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { usePrivy } from "@privy-io/react-auth";
 import { useAccount, useReadContract, useSwitchChain } from "wagmi";
-import { monadTestnet } from "./wagmi";
+import { monadMainnet } from "./wagmi";
 import { EXPLORER, TAB_ADDRESS, tabAbi } from "./contract";
 import { shortAddr, addrHue } from "./lib";
 import Home from "./Home";
@@ -45,7 +45,7 @@ export default function App() {
   );
 
   const connected = ready && authenticated && !!address;
-  const wrongChain = connected && chainId !== monadTestnet.id;
+  const wrongChain = connected && chainId !== monadMainnet.id;
   const identity =
     user?.google?.name || user?.email?.address || (address ? shortAddr(address) : "");
 
@@ -64,13 +64,13 @@ export default function App() {
             {wrongChain ? (
               <span
                 className="net-pill bad"
-                onClick={() => switchChain({ chainId: monadTestnet.id })}
-                title="Click to switch to Monad Testnet"
+                onClick={() => switchChain({ chainId: monadMainnet.id })}
+                title="Click to switch to Monad"
               >
                 wrong network
               </span>
             ) : (
-              <span className="net-pill ok">monad testnet</span>
+              <span className="net-pill ok">monad</span>
             )}
             <button className="ghost" onClick={() => logout()}>
               ×
@@ -145,11 +145,7 @@ function Hero({
             {groupCount.toString()} tab{groupCount === 1n ? "" : "s"} open onchain ·{" "}
           </>
         )}
-        Runs on Monad Testnet · you'll need{" "}
-        <a href="https://faucet.monad.xyz" target="_blank" rel="noreferrer">
-          faucet MON
-        </a>{" "}
-        ·{" "}
+        Runs on Monad ·{" "}
         <a href={`${EXPLORER}/address/${TAB_ADDRESS}`} target="_blank" rel="noreferrer">
           view the contract
         </a>

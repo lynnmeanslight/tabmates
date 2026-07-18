@@ -39,6 +39,7 @@ contract TabMates {
     error NotAMember();
     error AlreadyMember();
     error ZeroAmount();
+    error AmountTooLarge();
     error ZeroAddress();
     error EmptyName();
     error MemoTooLong();
@@ -75,6 +76,11 @@ contract TabMates {
     uint256 public constant MAX_NAME_BYTES = 64;
     uint256 public constant MAX_MEMO_BYTES = 140;
     uint256 public constant MAX_LABEL_BYTES = 32;
+
+    /// @dev Cap on a single expense (~3.4e20 MON — far above total supply).
+    ///      Keeps every debt edge far below int256 range so `netBalance` and
+    ///      debt accumulation can never overflow or silently wrap.
+    uint256 public constant MAX_AMOUNT = type(uint128).max;
 
     uint256 public groupCount;
 
@@ -199,6 +205,7 @@ contract TabMates {
         address[] calldata participants
     ) external onlyMember(groupId) returns (uint256 expenseId) {
         if (amount == 0) revert ZeroAmount();
+        if (amount > MAX_AMOUNT) revert AmountTooLarge();
         if (bytes(memo).length > MAX_MEMO_BYTES) revert MemoTooLong();
         uint256 n = participants.length;
         if (n == 0) revert NoParticipants();
@@ -246,8 +253,9 @@ contract TabMates {
         } else {
             debt[groupId][creditor][debtor] = 0;
             unchecked {
-                debt[groupId][debtor][creditor] += amount - reverse;
+                amount -= reverse; // safe: reverse < amount in this branch
             }
+            debt[groupId][debtor][creditor] += amount; // checked add: never wraps
         }
     }
 

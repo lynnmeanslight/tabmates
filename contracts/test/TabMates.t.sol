@@ -203,6 +203,30 @@ contract TabMatesTest is Test {
         tab.addExpense(id, "x", 1 ether, withOutsider);
     }
 
+    function test_expenseAmountCapped() public {
+        uint256 id = _newGroup();
+        address[] memory ps = new address[](2);
+        ps[0] = alice;
+        ps[1] = bob;
+
+        // absurd amounts revert instead of ever wrapping the debt ledger
+        vm.prank(alice);
+        vm.expectRevert(TabMates.AmountTooLarge.selector);
+        tab.addExpense(id, "x", type(uint256).max, ps);
+
+        vm.prank(alice);
+        vm.expectRevert(TabMates.AmountTooLarge.selector);
+        tab.addExpense(id, "x", uint256(type(uint128).max) + 1, ps);
+
+        // the cap itself is accepted, debts accumulate with checked math
+        vm.prank(alice);
+        tab.addExpense(id, "x", type(uint128).max, ps);
+        vm.prank(alice);
+        tab.addExpense(id, "x", type(uint128).max, ps);
+        assertEq(tab.debt(id, bob, alice), (uint256(type(uint128).max) / 2) * 2);
+        assertGt(tab.netBalance(id, alice), 0); // int256 views stay sane
+    }
+
     // ---------------------------------------------------------- settlement
 
     function test_settleTransfersRealValue() public {

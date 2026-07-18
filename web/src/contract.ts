@@ -1,7 +1,7 @@
 import { parseAbi } from "viem";
 
-/** TabMates v2, deployed on Monad Testnet (chain id 10143). */
-export const TAB_ADDRESS = "0x6B7DF3C263E495c319b3841c658A23E5E361d110" as const;
+/** TabMates v3 (audited), deployed on Monad Mainnet (chain id 143). */
+export const TAB_ADDRESS = "0xc294C7E608F79e9FfCF4eDB85e36A91E4CCBAdB9" as const;
 
 export const tabAbi = parseAbi([
   "struct Expense { address payer; uint256 amount; uint64 timestamp; string memo; address[] participants; }",
@@ -29,4 +29,4 @@ export const tabAbi = parseAbi([
   "event Settled(uint256 indexed groupId, address indexed from, address indexed to, uint256 amount)",
 ]);
 
-export const EXPLORER = "https://testnet.monadvision.com";
+export const EXPLORER = "https://monadvision.com";

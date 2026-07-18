@@ -2,7 +2,7 @@
 
 **Split the bill. Actually settle it.**
 
-Live app: **https://lynnmeanslight.github.io/tabmates/** · Contract: [`0x6B7DF3C263E495c319b3841c658A23E5E361d110`](https://testnet.monadvision.com/address/0x6B7DF3C263E495c319b3841c658A23E5E361d110) (Monad Testnet, [verified](https://testnet.monadvision.com/address/0x6B7DF3C263E495c319b3841c658A23E5E361d110?tab=Contract))
+Live app: **https://lynnmeanslight.github.io/tabmates/** · Contract: [`0xc294C7E608F79e9FfCF4eDB85e36A91E4CCBAdB9`](https://monadvision.com/address/0xc294C7E608F79e9FfCF4eDB85e36A91E4CCBAdB9) (Monad Mainnet, [verified](https://monadvision.com/address/0xc294C7E608F79e9FfCF4eDB85e36A91E4CCBAdB9?tab=Contract))
 
 ## The problem (a personal one)
 
@@ -39,8 +39,8 @@ view functions (`getAllDebts`, `netBalance`, ranged feeds) every few seconds.
 ## Run it in 3 minutes
 
 Sign in with email/Google (Privy creates an embedded wallet for you) or a
-browser wallet. For settling you'll want free testnet MON from the
-[faucet](https://faucet.monad.xyz).
+browser wallet. TabMates runs on **Monad mainnet** — settling moves real MON
+(logging expenses only costs gas, a fraction of a cent).
 
 **Just use it:** open the [live app](https://lynnmeanslight.github.io/tabmates/),
 sign in, open a tab (name your mates!), log an expense. To see the full loop,
@@ -51,22 +51,22 @@ add a second account as a member and settle from it.
 ```sh
 cd web
 npm install
-npm run dev          # http://localhost:5173, talks to the live testnet contract
+npm run dev          # http://localhost:5173, talks to the live mainnet contract
 ```
 
 **Contract dev (Foundry):**
 
 ```sh
 cd contracts
-forge test           # 16 tests: splitting, netting, settlement, naming, auth, dust
+forge test           # 17 tests: splitting, netting, settlement, naming, auth, dust, caps
 forge build
 ```
 
-**Live end-to-end check** (creates a real tab on testnet with two wallets,
-logs expenses, settles, prints the resulting state):
+**Live end-to-end check** (creates a real tab on mainnet with two wallets,
+logs expenses, settles, prints the resulting state — spends a little real MON):
 
 ```sh
-DEPLOYER_KEY=0x<funded testnet key> node scripts/smoke.mjs
+DEPLOYER_KEY=0x<funded key> node scripts/smoke.mjs
 ```
 
 ## How it's built
@@ -76,7 +76,7 @@ DEPLOYER_KEY=0x<funded testnet key> node scripts/smoke.mjs
 | Contract  | Solidity 0.8.28, Foundry, zero dependencies, ~400 lines           |
 | Auth      | Privy — email / Google / wallet login, embedded wallets on Monad  |
 | Frontend  | Vite + React + TypeScript, wagmi v2 / viem, hand-rolled CSS       |
-| Chain     | Monad Testnet (chain id 10143) — 400ms blocks make every UI action feel instant |
+| Chain     | Monad Mainnet (chain id 143) — 400ms blocks make every UI action feel instant |
 
 ### Contract design notes
 
@@ -110,8 +110,10 @@ tab; the contract enforces membership, split validity, settlement caps (can't
 overpay a debt), and holds no funds. It is not designed for adversarial
 strangers — it replaces the notes app, not the courts.
 
-> v1 of this contract (pre-rename, no member names) lives at
-> [`0x698EBb78528e2a55B14ccf3c33171CcBF8f6392f`](https://testnet.monadvision.com/address/0x698EBb78528e2a55B14ccf3c33171CcBF8f6392f).
+> Earlier deployments live on Monad Testnet: v1 (pre-rename, no member names) at
+> [`0x698EBb78528e2a55B14ccf3c33171CcBF8f6392f`](https://testnet.monadvision.com/address/0x698EBb78528e2a55B14ccf3c33171CcBF8f6392f),
+> v2 at [`0x6B7DF3C263E495c319b3841c658A23E5E361d110`](https://testnet.monadvision.com/address/0x6B7DF3C263E495c319b3841c658A23E5E361d110).
+> v3 (mainnet) adds an expense cap (`MAX_AMOUNT`) and a hardened `_addDebt` after a pre-mainnet security review.
 
 ## License
 

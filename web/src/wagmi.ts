@@ -2,22 +2,21 @@ import { http } from "wagmi";
 import { createConfig } from "@privy-io/wagmi";
 import { defineChain } from "viem";
 
-export const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
+export const monadMainnet = defineChain({
+  id: 143,
+  name: "Monad",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
   rpcUrls: {
-    default: { http: ["https://testnet-rpc.monad.xyz"] },
+    default: { http: ["https://rpc.monad.xyz"] },
   },
   blockExplorers: {
-    default: { name: "MonadVision", url: "https://testnet.monadvision.com" },
+    default: { name: "MonadVision", url: "https://monadvision.com" },
   },
-  testnet: true,
 });
 
 export const config = createConfig({
-  chains: [monadTestnet],
+  chains: [monadMainnet],
   transports: {
-    [monadTestnet.id]: http(),
+    [monadMainnet.id]: http(),
   },
 });
