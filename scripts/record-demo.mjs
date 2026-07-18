@@ -79,6 +79,20 @@ await page.exposeBinding("__signMessage", async (_src, addr, message) => {
   console.log(`  siwe signed by ${addr.slice(0, 8)}…`);
   return sig;
 });
+await page.exposeBinding("__signTypedData", async (_src, addr, typedJson) => {
+  const account = accounts[addr.toLowerCase()];
+  const t = JSON.parse(typedJson);
+  return account.signTypedData({
+    domain: t.domain,
+    types: t.types,
+    primaryType: t.primaryType,
+    message: t.message,
+  });
+});
+page.on("console", (m) => {
+  if (m.type() === "error" || m.type() === "warning")
+    console.log(`  [page ${m.type()}] ${m.text().slice(0, 140)}`);
+});
 
 // EIP-1193 shim (handles Privy's SIWE wallet login) + cursor + captions
 await page.addInitScript(
@@ -110,6 +124,12 @@ await page.addInitScript(
             return "0x279f";
           case "wallet_switchEthereumChain":
           case "wallet_addEthereumChain":
+          case "wallet_watchAsset":
+            return null;
+          case "wallet_requestPermissions":
+          case "wallet_getPermissions":
+            return [{ parentCapability: "eth_accounts" }];
+          case "wallet_revokePermissions":
             return null;
           case "personal_sign": {
             // params: [message, address] — message may be hex or utf8
@@ -128,9 +148,18 @@ await page.addInitScript(
             }
             return window.__signMessage(addr, text);
           }
+          case "eth_signTypedData_v4":
+          case "eth_signTypedData": {
+            const [addr, typed] = params;
+            return window.__signTypedData(
+              addr,
+              typeof typed === "string" ? typed : JSON.stringify(typed)
+            );
+          }
           case "eth_sendTransaction":
             return window.__signAndSend(JSON.stringify(params[0]));
           default:
+            if (method.startsWith("wallet_")) return null;
             return rpc(method, params ?? []);
         }
       },
@@ -139,6 +168,21 @@ await page.addInitScript(
       account = a;
       (handlers["accountsChanged"] || []).forEach((f) => f([a]));
     };
+    // EIP-6963 announcement so Privy's wallet list detects the shim
+    const providerInfo = {
+      uuid: "b8f7d3a2-1c4e-4f6a-9d2b-7e5a9c1d3f60",
+      name: "MetaMask",
+      icon: "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg'/>",
+      rdns: "io.metamask",
+    };
+    const announce = () =>
+      window.dispatchEvent(
+        new CustomEvent("eip6963:announceProvider", {
+          detail: Object.freeze({ info: providerInfo, provider: window.ethereum }),
+        })
+      );
+    window.addEventListener("eip6963:requestProvider", announce);
+    announce();
     addEventListener("DOMContentLoaded", () => {
       const c = document.createElement("div");
       c.id = "__cursor";
@@ -181,24 +225,24 @@ const typeSlow = async (locator, text) => {
 async function privyLogin() {
   await glideClick(page.getByRole("button", { name: "Sign in" }));
   await pause(1500);
-  // Privy modal: pick the injected/browser wallet option, then MetaMask entry if listed
-  const walletBtn = page
-    .getByRole("button", { name: /metamask|browser wallet|continue with a wallet/i })
-    .first();
-  await glideClick(walletBtn);
+  const modal = page.locator("#privy-modal-content");
+  await glideClick(modal.getByRole("button", { name: /continue with a wallet/i }).first());
   await pause(1200);
-  // some flows show a second list of detected wallets
-  const detected = page.getByRole("button", { name: /metamask/i }).first();
+  // second screen may list detected wallets (MetaMask via EIP-6963)
+  const detected = modal.getByRole("button", { name: /metamask/i }).first();
   if (await detected.isVisible().catch(() => false)) {
     await glideClick(detected);
   }
-  // SIWE prompt inside Privy modal (if shown)
-  const sign = page.getByRole("button", { name: /sign|confirm/i }).first();
-  if (await sign.isVisible().catch(() => false)) {
-    await glideClick(sign);
+  // handle SIWE / retry prompts inside the modal only
+  for (let i = 0; i < 20; i++) {
+    if (await page.locator(".account-chip").isVisible().catch(() => false)) break;
+    const retry = modal.getByRole("button", { name: /retry/i }).first();
+    const sign = modal.getByRole("button", { name: /^sign( and continue)?$|confirm/i }).first();
+    if (await sign.isVisible().catch(() => false)) await sign.click().catch(() => {});
+    else if (await retry.isVisible().catch(() => false)) await retry.click().catch(() => {});
+    await pause(1000);
   }
-  // wait until app shows the connected header chip
-  await page.locator(".account-chip").waitFor({ timeout: 40000 });
+  await page.locator(".account-chip").waitFor({ timeout: 20000 });
 }
 
 async function privyLogout() {
@@ -208,8 +252,9 @@ async function privyLogout() {
 
 // ---------------------------------------------------------------- scenes
 
-await page.goto(APP, { waitUntil: "networkidle" });
-await pause(1200);
+await page.goto(APP, { waitUntil: "domcontentloaded" });
+await page.getByRole("button", { name: "Sign in" }).waitFor({ timeout: 30000 });
+await pause(1500);
 await caption("TabMates — split expenses with people, not hex addresses · live on Monad");
 await pause(3000);
 
