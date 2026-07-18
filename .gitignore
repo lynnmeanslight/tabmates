@@ -1,0 +1,17 @@
+# foundry
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# node
+node_modules/
+web/dist/
+
+# secrets — never commit keys
+.env
+.env.*
+*.key
+deployer.txt
+
+# os
+.DS_Store
