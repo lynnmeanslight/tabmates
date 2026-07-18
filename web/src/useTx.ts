@@ -3,7 +3,7 @@ import { useToast } from "./App";
 import { TAB_ADDRESS, tabAbi } from "./contract";
 
 type WriteArgs = {
-  functionName: "createGroup" | "addMember" | "addExpense" | "settle";
+  functionName: "createGroup" | "addMember" | "setMemberName" | "addExpense" | "settle";
   args: readonly unknown[];
   value?: bigint;
   pendingText: string;

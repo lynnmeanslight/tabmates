@@ -1,5 +1,5 @@
-import { http, createConfig } from "wagmi";
-import { injected } from "wagmi/connectors";
+import { http } from "wagmi";
+import { createConfig } from "@privy-io/wagmi";
 import { defineChain } from "viem";
 
 export const monadTestnet = defineChain({
@@ -17,7 +17,6 @@ export const monadTestnet = defineChain({
 
 export const config = createConfig({
   chains: [monadTestnet],
-  connectors: [injected()],
   transports: {
     [monadTestnet.id]: http(),
   },

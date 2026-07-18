@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.28;
 
-/// @title Tab — a shared-expenses ledger with onchain settlement
+/// @title TabMates — a shared-expenses ledger with onchain settlement
 /// @notice Log who paid for what in a group (roommates, trips, friends),
 ///         keep pairwise debts netted automatically, and settle up by
-///         actually sending MON — not by marking a checkbox.
+///         actually sending MON — not by marking a checkbox. Members carry
+///         human-readable names so the ledger reads like a fridge note,
+///         not a block explorer.
 /// @dev    No custody: settlement value is forwarded to the creditor in the
 ///         same transaction. The contract never holds funds.
-contract Tab {
+contract TabMates {
     // ---------------------------------------------------------------- types
 
     struct Group {
@@ -41,6 +43,8 @@ contract Tab {
     error EmptyName();
     error MemoTooLong();
     error NameTooLong();
+    error LabelTooLong();
+    error LengthMismatch();
     error TooManyMembers();
     error NoParticipants();
     error DuplicateParticipant();
@@ -55,6 +59,7 @@ contract Tab {
 
     event GroupCreated(uint256 indexed groupId, string name, address indexed creator);
     event MemberAdded(uint256 indexed groupId, address indexed member, address indexed addedBy);
+    event MemberNamed(uint256 indexed groupId, address indexed member, string name, address indexed namedBy);
     event ExpenseAdded(
         uint256 indexed groupId,
         uint256 indexed expenseId,
@@ -69,6 +74,7 @@ contract Tab {
     uint256 public constant MAX_MEMBERS = 32;
     uint256 public constant MAX_NAME_BYTES = 64;
     uint256 public constant MAX_MEMO_BYTES = 140;
+    uint256 public constant MAX_LABEL_BYTES = 32;
 
     uint256 public groupCount;
 
@@ -81,6 +87,11 @@ contract Tab {
     mapping(uint256 => mapping(address => mapping(address => uint256))) public debt;
 
     mapping(uint256 => mapping(address => bool)) public isMember;
+
+    /// @notice memberName[groupId][member] — human label shown instead of the
+    ///         address ("Maya", "Sam from 4B"). Set by whoever adds the member,
+    ///         editable by any member of the group (tabs are trust-scoped).
+    mapping(uint256 => mapping(address => string)) public memberName;
 
     /// @notice Every group id an address belongs to (for indexer-free frontends).
     mapping(address => uint256[]) private _memberGroups;
@@ -103,14 +114,19 @@ contract Tab {
     // ------------------------------------------------------------- mutators
 
     /// @notice Start a new tab. Caller becomes a member automatically.
-    /// @param name     Display name, e.g. "Flat 4B" (≤ 64 bytes).
-    /// @param members  Other members to add right away (can be empty).
-    function createGroup(string calldata name, address[] calldata members)
-        external
-        returns (uint256 groupId)
-    {
+    /// @param name         Display name, e.g. "Flat 4B" (≤ 64 bytes).
+    /// @param yourName     Your own label, e.g. "Lynn" (≤ 32 bytes, may be "").
+    /// @param members      Other members to add right away (can be empty).
+    /// @param memberNames  A label per member, aligned with `members` ("" allowed).
+    function createGroup(
+        string calldata name,
+        string calldata yourName,
+        address[] calldata members,
+        string[] calldata memberNames
+    ) external returns (uint256 groupId) {
         if (bytes(name).length == 0) revert EmptyName();
         if (bytes(name).length > MAX_NAME_BYTES) revert NameTooLong();
+        if (members.length != memberNames.length) revert LengthMismatch();
         if (members.length + 1 > MAX_MEMBERS) revert TooManyMembers();
 
         groupId = groupCount++;
@@ -119,28 +135,52 @@ contract Tab {
         g.creator = msg.sender;
         g.createdAt = uint64(block.timestamp);
 
-        _addMember(groupId, msg.sender, msg.sender);
+        _addMember(groupId, msg.sender, yourName, msg.sender);
         for (uint256 i = 0; i < members.length; i++) {
-            _addMember(groupId, members[i], msg.sender);
+            _addMember(groupId, members[i], memberNames[i], msg.sender);
         }
 
         emit GroupCreated(groupId, name, msg.sender);
     }
 
-    /// @notice Add a member to a tab. Any existing member may add people
-    ///         (tabs are for people who already trust each other).
-    function addMember(uint256 groupId, address member) external onlyMember(groupId) {
+    /// @notice Add a member (with an optional label) to a tab. Any existing
+    ///         member may add people — tabs are for people who already trust
+    ///         each other.
+    function addMember(uint256 groupId, address member, string calldata name)
+        external
+        onlyMember(groupId)
+    {
         if (_groups[groupId].members.length + 1 > MAX_MEMBERS) revert TooManyMembers();
-        _addMember(groupId, member, msg.sender);
+        _addMember(groupId, member, name, msg.sender);
     }
 
-    function _addMember(uint256 groupId, address member, address addedBy) private {
+    /// @notice Set or fix the label of any member in a tab you belong to
+    ///         (rename yourself, or the roommate who typed their own name as
+    ///         "asdf"). Empty string clears the label.
+    function setMemberName(uint256 groupId, address member, string calldata name)
+        external
+        onlyMember(groupId)
+    {
+        if (!isMember[groupId][member]) revert NotAMember();
+        if (bytes(name).length > MAX_LABEL_BYTES) revert LabelTooLong();
+        memberName[groupId][member] = name;
+        emit MemberNamed(groupId, member, name, msg.sender);
+    }
+
+    function _addMember(uint256 groupId, address member, string calldata name, address addedBy)
+        private
+    {
         if (member == address(0)) revert ZeroAddress();
         if (isMember[groupId][member]) revert AlreadyMember();
+        if (bytes(name).length > MAX_LABEL_BYTES) revert LabelTooLong();
         isMember[groupId][member] = true;
         _groups[groupId].members.push(member);
         _memberGroups[member].push(groupId);
         emit MemberAdded(groupId, member, addedBy);
+        if (bytes(name).length != 0) {
+            memberName[groupId][member] = name;
+            emit MemberNamed(groupId, member, name, addedBy);
+        }
     }
 
     /// @notice Record an expense you paid, split equally among `participants`.
@@ -252,11 +292,22 @@ contract Tab {
     function getGroup(uint256 groupId)
         external
         view
-        returns (string memory name, address creator, uint64 createdAt, address[] memory members)
+        returns (
+            string memory name,
+            address creator,
+            uint64 createdAt,
+            address[] memory members,
+            string[] memory memberNames
+        )
     {
         if (groupId >= groupCount) revert UnknownGroup();
         Group storage g = _groups[groupId];
-        return (g.name, g.creator, g.createdAt, g.members);
+        uint256 n = g.members.length;
+        memberNames = new string[](n);
+        for (uint256 i = 0; i < n; i++) {
+            memberNames[i] = memberName[groupId][g.members[i]];
+        }
+        return (g.name, g.creator, g.createdAt, g.members, memberNames);
     }
 
     /// @notice All group ids `account` belongs to.

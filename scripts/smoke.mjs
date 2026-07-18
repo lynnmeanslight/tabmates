@@ -1,4 +1,4 @@
-// End-to-end smoke test against the LIVE Tab contract on Monad testnet.
+// End-to-end smoke test against the LIVE TabMates contract on Monad testnet.
 // Simulates two roommates: creates a tab, logs expenses, settles with real MON.
 // Usage: DEPLOYER_KEY=0x... node scripts/smoke.mjs
 import {
@@ -12,7 +12,7 @@ import {
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { readFileSync } from "node:fs";
 
-const TAB = "0x698EBb78528e2a55B14ccf3c33171CcBF8f6392f";
+const TAB = "0x6B7DF3C263E495c319b3841c658A23E5E361d110";
 
 const monadTestnet = defineChain({
   id: 10143,
@@ -22,7 +22,7 @@ const monadTestnet = defineChain({
 });
 
 const abi = JSON.parse(
-  readFileSync(new URL("../contracts/out/Tab.sol/Tab.json", import.meta.url), "utf8")
+  readFileSync(new URL("../contracts/out/TabMates.sol/TabMates.json", import.meta.url), "utf8")
 ).abi;
 
 const key = process.env.DEPLOYER_KEY;
@@ -57,11 +57,16 @@ console.log("\n1. funding bob with 1 MON…");
 const fundHash = await wAlice.sendTransaction({ to: bob.address, value: parseEther("1") });
 await pub.waitForTransactionReceipt({ hash: fundHash });
 
-console.log("\n2. alice opens tab 'Flat 4B' with bob…");
-await send(wAlice, "createGroup", ["Flat 4B", [bob.address]]);
+console.log("\n2. alice opens tab 'Flat 4B' with bob (named!)…");
+await send(wAlice, "createGroup", ["Flat 4B", "Alice", [bob.address], ["Bob"]]);
 const count = await pub.readContract({ address: TAB, abi, functionName: "groupCount" });
 const gid = count - 1n;
 console.log(`  tab id: ${gid}`);
+
+const [, , , , labels] = await pub.readContract({
+  address: TAB, abi, functionName: "getGroup", args: [gid],
+});
+console.log(`  member labels onchain: ${JSON.stringify(labels)}`);
 
 console.log("\n3. alice logs 'Groceries' 0.4 MON split 2 ways…");
 await send(wAlice, "addExpense", [gid, "Groceries", parseEther("0.4"), [alice.address, bob.address]]);

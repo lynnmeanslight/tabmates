@@ -506,6 +506,13 @@ label {
   gap: 12px;
 }
 
+.mate-row {
+  display: grid;
+  grid-template-columns: 1fr 160px auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
 .check-row {
   display: flex;
   flex-wrap: wrap;
@@ -641,6 +648,9 @@ label {
 
 @media (max-width: 560px) {
   .row-2 {
+    grid-template-columns: 1fr;
+  }
+  .mate-row {
     grid-template-columns: 1fr;
   }
   .brand .tagline {

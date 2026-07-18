@@ -11,6 +11,11 @@ export function shortAddr(a: string): string {
   return `${a.slice(0, 6)}…${a.slice(-4)}`;
 }
 
+/** Human label if set onchain, else shortened address. */
+export function displayName(name: string | undefined, addr: string): string {
+  return name && name.length > 0 ? name : shortAddr(addr);
+}
+
 /** Deterministic pastel-ish hue per address, for identity dots. */
 export function addrHue(a: string): number {
   let h = 0;

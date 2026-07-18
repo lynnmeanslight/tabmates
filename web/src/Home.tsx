@@ -46,7 +46,7 @@ export default function Home({ onOpen }: { onOpen: (id: bigint) => void }) {
         <div className="tab-grid">
           {ids.map((id, i) => {
             const group = groupData?.[i * 2]?.result as
-              | readonly [string, string, bigint, readonly string[]]
+              | readonly [string, string, bigint, readonly string[], readonly string[]]
               | undefined;
             const net = groupData?.[i * 2 + 1]?.result as bigint | undefined;
             return (
@@ -82,29 +82,41 @@ export default function Home({ onOpen }: { onOpen: (id: bigint) => void }) {
 
 function CreateTab() {
   const [name, setName] = useState("");
-  const [membersRaw, setMembersRaw] = useState("");
+  const [yourName, setYourName] = useState("");
+  const [rows, setRows] = useState<{ addr: string; label: string }[]>([
+    { addr: "", label: "" },
+  ]);
   const [err, setErr] = useState("");
   const { send, isPending } = useTx();
 
+  function setRow(i: number, patch: Partial<{ addr: string; label: string }>) {
+    setRows((rs) => rs.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  }
+
   async function create() {
     setErr("");
-    const members = membersRaw
-      .split(/[\n,;]+/)
-      .map((s) => s.trim())
-      .filter(Boolean);
     if (!name.trim()) return setErr("Give your tab a name.");
-    const bad = members.find((m) => !isAddress(m));
-    if (bad) return setErr(`Not an address: ${bad.slice(0, 24)}…`);
+    const filled = rows.filter((r) => r.addr.trim() !== "" || r.label.trim() !== "");
+    const bad = filled.find((r) => !isAddress(r.addr));
+    if (bad) return setErr(`Not a wallet address: ${(bad.addr || "(empty)").slice(0, 24)}`);
+    if (filled.some((r) => r.label.trim().length > 32))
+      return setErr("Names must be 32 characters or fewer.");
 
     const ok = await send({
       functionName: "createGroup",
-      args: [name.trim(), members],
+      args: [
+        name.trim(),
+        yourName.trim(),
+        filled.map((r) => r.addr.trim()),
+        filled.map((r) => r.label.trim()),
+      ],
       pendingText: `Opening "${name.trim()}"`,
       doneText: `Tab "${name.trim()}" is live onchain`,
     });
     if (ok) {
       setName("");
-      setMembersRaw("");
+      setYourName("");
+      setRows([{ addr: "", label: "" }]);
     }
   }
 
@@ -115,23 +127,60 @@ function CreateTab() {
         <span className="meta">costs a fraction of a cent</span>
       </div>
       <div className="form-grid">
-        <div>
-          <label>Tab name</label>
-          <input
-            placeholder="Flat 4B · Lisbon trip · Lunch crew"
-            value={name}
-            maxLength={64}
-            onChange={(e) => setName(e.target.value)}
-          />
+        <div className="row-2">
+          <div>
+            <label>Tab name</label>
+            <input
+              placeholder="Flat 4B · Lisbon trip · Lunch crew"
+              value={name}
+              maxLength={64}
+              onChange={(e) => setName(e.target.value)}
+            />
+          </div>
+          <div>
+            <label>Your name</label>
+            <input
+              placeholder="Lynn"
+              value={yourName}
+              maxLength={32}
+              onChange={(e) => setYourName(e.target.value)}
+            />
+          </div>
         </div>
         <div>
-          <label>Members (wallet addresses, one per line — you're added automatically)</label>
-          <textarea
-            rows={2}
-            placeholder={"0xabc…\n0xdef…"}
-            value={membersRaw}
-            onChange={(e) => setMembersRaw(e.target.value)}
-          />
+          <label>Mates (you're added automatically)</label>
+          <div className="form-grid" style={{ gap: 8 }}>
+            {rows.map((r, i) => (
+              <div className="mate-row" key={i}>
+                <input
+                  placeholder="0x… wallet address"
+                  value={r.addr}
+                  onChange={(e) => setRow(i, { addr: e.target.value })}
+                />
+                <input
+                  placeholder="Name (e.g. Maya)"
+                  maxLength={32}
+                  value={r.label}
+                  onChange={(e) => setRow(i, { label: e.target.value })}
+                />
+                <button
+                  className="ghost"
+                  title="remove"
+                  onClick={() => setRows((rs) => rs.filter((_, j) => j !== i))}
+                  disabled={rows.length === 1}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+          </div>
+          <button
+            className="ghost"
+            style={{ marginTop: 8 }}
+            onClick={() => setRows((rs) => [...rs, { addr: "", label: "" }])}
+          >
+            + another mate
+          </button>
         </div>
         {err && <div className="error-text">{err}</div>}
         <div>

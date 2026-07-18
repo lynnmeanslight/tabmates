@@ -2,10 +2,10 @@
 pragma solidity ^0.8.28;
 
 import {Test} from "forge-std/Test.sol";
-import {Tab} from "../src/Tab.sol";
+import {TabMates} from "../src/TabMates.sol";
 
-contract TabTest is Test {
-    Tab tab;
+contract TabMatesTest is Test {
+    TabMates tab;
 
     address alice = makeAddr("alice");
     address bob = makeAddr("bob");
@@ -13,7 +13,7 @@ contract TabTest is Test {
     address mallory = makeAddr("mallory");
 
     function setUp() public {
-        tab = new Tab();
+        tab = new TabMates();
         vm.deal(alice, 100 ether);
         vm.deal(bob, 100 ether);
         vm.deal(cara, 100 ether);
@@ -24,18 +24,26 @@ contract TabTest is Test {
         address[] memory others = new address[](2);
         others[0] = bob;
         others[1] = cara;
+        string[] memory names = new string[](2);
+        names[0] = "Bob";
+        names[1] = "Cara";
         vm.prank(alice);
-        id = tab.createGroup("Flat 4B", others);
+        id = tab.createGroup("Flat 4B", "Alice", others, names);
     }
 
     // ------------------------------------------------------------ creation
 
     function test_createGroup() public {
         uint256 id = _newGroup();
-        (string memory name, address creator,, address[] memory members) = tab.getGroup(id);
+        (string memory name, address creator,, address[] memory members, string[] memory labels) =
+            tab.getGroup(id);
         assertEq(name, "Flat 4B");
         assertEq(creator, alice);
         assertEq(members.length, 3);
+        assertEq(labels.length, 3);
+        assertEq(labels[0], "Alice");
+        assertEq(labels[1], "Bob");
+        assertEq(labels[2], "Cara");
         assertTrue(tab.isMember(id, alice));
         assertTrue(tab.isMember(id, bob));
         assertTrue(tab.isMember(id, cara));
@@ -45,26 +53,78 @@ contract TabTest is Test {
 
     function test_createGroup_rejectsEmptyName() public {
         address[] memory none = new address[](0);
-        vm.expectRevert(Tab.EmptyName.selector);
-        tab.createGroup("", none);
+        string[] memory noNames = new string[](0);
+        vm.expectRevert(TabMates.EmptyName.selector);
+        tab.createGroup("", "Me", none, noNames);
+    }
+
+    function test_createGroup_rejectsLengthMismatch() public {
+        address[] memory one = new address[](1);
+        one[0] = bob;
+        string[] memory two = new string[](2);
+        vm.expectRevert(TabMates.LengthMismatch.selector);
+        tab.createGroup("X", "Me", one, two);
+    }
+
+    // -------------------------------------------------------------- naming
+
+    function test_namesOptionalAndEditable() public {
+        uint256 id = _newGroup();
+
+        // add mallory without a label
+        vm.prank(bob);
+        tab.addMember(id, mallory, "");
+        assertEq(tab.memberName(id, mallory), "");
+
+        // she names herself
+        vm.prank(mallory);
+        tab.setMemberName(id, mallory, "Mal");
+        assertEq(tab.memberName(id, mallory), "Mal");
+
+        // a roommate fixes a label (trust-scoped groups)
+        vm.prank(alice);
+        tab.setMemberName(id, mallory, "Mallory 3C");
+        assertEq(tab.memberName(id, mallory), "Mallory 3C");
+
+        // clearing works
+        vm.prank(mallory);
+        tab.setMemberName(id, mallory, "");
+        assertEq(tab.memberName(id, mallory), "");
+    }
+
+    function test_setMemberName_guards() public {
+        uint256 id = _newGroup();
+
+        vm.prank(mallory); // not a member
+        vm.expectRevert(TabMates.NotAMember.selector);
+        tab.setMemberName(id, bob, "X");
+
+        vm.prank(alice); // target not a member
+        vm.expectRevert(TabMates.NotAMember.selector);
+        tab.setMemberName(id, mallory, "X");
+
+        vm.prank(alice); // label too long
+        vm.expectRevert(TabMates.LabelTooLong.selector);
+        tab.setMemberName(id, bob, "0123456789012345678901234567890123");
     }
 
     function test_addMember_onlyMembers() public {
         uint256 id = _newGroup();
         vm.prank(mallory);
-        vm.expectRevert(Tab.NotAMember.selector);
-        tab.addMember(id, mallory);
+        vm.expectRevert(TabMates.NotAMember.selector);
+        tab.addMember(id, mallory, "Mal");
 
         vm.prank(bob);
-        tab.addMember(id, mallory);
+        tab.addMember(id, mallory, "Mal");
         assertTrue(tab.isMember(id, mallory));
+        assertEq(tab.memberName(id, mallory), "Mal");
     }
 
     function test_addMember_rejectsDuplicates() public {
         uint256 id = _newGroup();
         vm.prank(alice);
-        vm.expectRevert(Tab.AlreadyMember.selector);
-        tab.addMember(id, bob);
+        vm.expectRevert(TabMates.AlreadyMember.selector);
+        tab.addMember(id, bob, "Bob2");
     }
 
     // ------------------------------------------------------------ expenses
@@ -92,7 +152,6 @@ contract TabTest is Test {
         justBobCara[0] = bob;
         justBobCara[1] = cara;
 
-        // alice fronts 2 MON for something only bob & cara use
         vm.prank(alice);
         tab.addExpense(id, "Their takeout", 2 ether, justBobCara);
 
@@ -122,25 +181,25 @@ contract TabTest is Test {
         ps[0] = bob;
 
         vm.prank(mallory);
-        vm.expectRevert(Tab.NotAMember.selector);
+        vm.expectRevert(TabMates.NotAMember.selector);
         tab.addExpense(id, "x", 1 ether, ps);
 
         vm.prank(alice);
-        vm.expectRevert(Tab.ZeroAmount.selector);
+        vm.expectRevert(TabMates.ZeroAmount.selector);
         tab.addExpense(id, "x", 0, ps);
 
         address[] memory dup = new address[](2);
         dup[0] = bob;
         dup[1] = bob;
         vm.prank(alice);
-        vm.expectRevert(Tab.DuplicateParticipant.selector);
+        vm.expectRevert(TabMates.DuplicateParticipant.selector);
         tab.addExpense(id, "x", 1 ether, dup);
 
         address[] memory withOutsider = new address[](2);
         withOutsider[0] = bob;
         withOutsider[1] = mallory;
         vm.prank(alice);
-        vm.expectRevert(Tab.NotAMember.selector);
+        vm.expectRevert(TabMates.NotAMember.selector);
         tab.addExpense(id, "x", 1 ether, withOutsider);
     }
 
@@ -189,19 +248,19 @@ contract TabTest is Test {
         tab.addExpense(id, "Rent", 4 ether, ab); // bob owes 2
 
         vm.prank(bob);
-        vm.expectRevert(Tab.PayingTooMuch.selector);
+        vm.expectRevert(TabMates.PayingTooMuch.selector);
         tab.settle{value: 3 ether}(id, alice);
 
         vm.prank(cara);
-        vm.expectRevert(Tab.NothingOwed.selector);
+        vm.expectRevert(TabMates.NothingOwed.selector);
         tab.settle{value: 1 ether}(id, alice);
 
         vm.prank(bob);
-        vm.expectRevert(Tab.SelfSettle.selector);
+        vm.expectRevert(TabMates.SelfSettle.selector);
         tab.settle{value: 1 ether}(id, bob);
 
         vm.prank(mallory);
-        vm.expectRevert(Tab.NotAMember.selector);
+        vm.expectRevert(TabMates.NotAMember.selector);
         tab.settle{value: 1 ether}(id, alice);
     }
 
@@ -220,7 +279,7 @@ contract TabTest is Test {
         tab.addExpense(id, "Internet", 1.5 ether, everyone);
 
         assertEq(tab.expenseCount(id), 2);
-        Tab.Expense[] memory page = tab.getExpenses(id, 0, 10);
+        TabMates.Expense[] memory page = tab.getExpenses(id, 0, 10);
         assertEq(page.length, 2);
         assertEq(page[0].memo, "Groceries");
         assertEq(page[1].payer, bob);

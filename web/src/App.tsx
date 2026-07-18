@@ -1,12 +1,7 @@
 import { createContext, useCallback, useContext, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  useAccount,
-  useConnect,
-  useDisconnect,
-  useReadContract,
-  useSwitchChain,
-} from "wagmi";
+import { usePrivy } from "@privy-io/react-auth";
+import { useAccount, useReadContract, useSwitchChain } from "wagmi";
 import { monadTestnet } from "./wagmi";
 import { EXPLORER, TAB_ADDRESS, tabAbi } from "./contract";
 import { shortAddr, addrHue } from "./lib";
@@ -27,9 +22,8 @@ export const useToast = () => useContext(ToastCtx);
 // ------------------------------------------------------------------ app
 
 export default function App() {
-  const { address, isConnected, chainId } = useAccount();
-  const { connect, connectors, isPending: connecting } = useConnect();
-  const { disconnect } = useDisconnect();
+  const { ready, authenticated, login, logout, user } = usePrivy();
+  const { address, chainId } = useAccount();
   const { switchChain } = useSwitchChain();
   const queryClient = useQueryClient();
 
@@ -50,21 +44,23 @@ export default function App() {
     [queryClient]
   );
 
-  const wrongChain = isConnected && chainId !== monadTestnet.id;
-  const injectedConnector = connectors[0];
+  const connected = ready && authenticated && !!address;
+  const wrongChain = connected && chainId !== monadTestnet.id;
+  const identity =
+    user?.google?.name || user?.email?.address || (address ? shortAddr(address) : "");
 
   return (
     <ToastCtx.Provider value={setToast}>
       <header className="topbar">
         <div className="brand" onClick={() => setOpenTab(null)}>
-          <h1>Tab</h1>
+          <h1>TabMates</h1>
           <span className="tagline">the roommate ledger on Monad</span>
         </div>
 
-        {isConnected && address ? (
+        {connected && address ? (
           <div className="account-chip">
             <span className="dot" style={{ background: `hsl(${addrHue(address)} 55% 62%)` }} />
-            {shortAddr(address)}
+            <span title={address}>{identity}</span>
             {wrongChain ? (
               <span
                 className="net-pill bad"
@@ -76,19 +72,15 @@ export default function App() {
             ) : (
               <span className="net-pill ok">monad testnet</span>
             )}
-            <button className="ghost" onClick={() => disconnect()}>
+            <button className="ghost" onClick={() => logout()}>
               ×
             </button>
           </div>
         ) : null}
       </header>
 
-      {!isConnected ? (
-        <Hero
-          connecting={connecting}
-          canConnect={!!injectedConnector}
-          onConnect={() => injectedConnector && connect({ connector: injectedConnector })}
-        />
+      {!connected ? (
+        <Hero connecting={!ready} canConnect={ready} onConnect={login} />
       ) : openTab === null ? (
         <Home onOpen={setOpenTab} />
       ) : (
@@ -109,7 +101,7 @@ export default function App() {
 
       <p className="footer-note">
         no custody · settlements go wallet-to-wallet ·{" "}
-        <a href="https://github.com/lynnmeanslight/tab-monad" target="_blank" rel="noreferrer">
+        <a href="https://github.com/lynnmeanslight/tabmates" target="_blank" rel="noreferrer">
           source
         </a>
       </p>
@@ -135,16 +127,17 @@ function Hero({
 
   return (
     <div className="hero">
-      <div className="stamp">Tab</div>
+      <div className="stamp">TM</div>
       <h2>Split the bill. Actually settle it.</h2>
       <p>
         Every shared-expense app ends the same way: the ledger says "you owe
-        Maya 3&nbsp;MON" and then… nothing happens. Tab keeps your group's
-        running total onchain and lets you clear your debt with a real
-        transfer, in one click, for less than a cent.
+        Maya 3&nbsp;MON" and then… nothing happens. TabMates keeps your group's
+        running total onchain — real names, not hex — and lets you clear your
+        debt with a real transfer, in one click, for less than a cent. Sign in
+        with email, Google, or any wallet.
       </p>
       <button className="accent" disabled={!canConnect || connecting} onClick={onConnect}>
-        {connecting ? "Connecting…" : "Connect wallet"}
+        {connecting ? "Loading…" : "Sign in"}
       </button>
       <p className="fine">
         {groupCount !== undefined && (

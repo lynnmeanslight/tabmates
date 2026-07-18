@@ -1,5 +1,7 @@
-// Records the demo video: drives the LIVE hosted app with two funded testnet
-// wallets (you + roomie), performing real onchain transactions on camera.
+// Records the TabMates demo video: drives the LIVE hosted app with two funded
+// testnet wallets (you + Maya), performing real onchain transactions on camera.
+// Privy auth is done via the "browser wallet" path — the injected shim signs
+// SIWE messages and transactions with real keys through viem.
 // Usage: DEPLOYER_KEY=0x... node scripts/record-demo.mjs
 import { chromium } from "playwright-core";
 import {
@@ -12,7 +14,7 @@ import {
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { homedir } from "node:os";
 
-const APP = "https://lynnmeanslight.github.io/tab-monad/";
+const APP = "https://lynnmeanslight.github.io/tabmates/";
 const CHROME = `${homedir()}/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 
 const monadTestnet = defineChain({
@@ -23,22 +25,27 @@ const monadTestnet = defineChain({
 });
 
 const you = privateKeyToAccount(process.env.DEPLOYER_KEY);
-const roomieKey = generatePrivateKey();
-const roomie = privateKeyToAccount(roomieKey);
+const mayaKey = generatePrivateKey();
+const maya = privateKeyToAccount(mayaKey);
 
 const pub = createPublicClient({ chain: monadTestnet, transport: http() });
-const wallets = {
-  [you.address.toLowerCase()]: createWalletClient({ account: you, chain: monadTestnet, transport: http() }),
-  [roomie.address.toLowerCase()]: createWalletClient({ account: roomie, chain: monadTestnet, transport: http() }),
+const accounts = {
+  [you.address.toLowerCase()]: you,
+  [maya.address.toLowerCase()]: maya,
 };
+const walletOf = (addr) =>
+  createWalletClient({
+    account: accounts[addr.toLowerCase()],
+    chain: monadTestnet,
+    transport: http(),
+  });
 
-console.log(`you:    ${you.address}`);
-console.log(`roomie: ${roomie.address}`);
+console.log(`you:  ${you.address}`);
+console.log(`maya: ${maya.address}`);
 
-// fund roomie for settling + gas
-console.log("funding roomie with 0.6 MON…");
-const fh = await wallets[you.address.toLowerCase()].sendTransaction({
-  to: roomie.address,
+console.log("funding maya with 0.6 MON…");
+const fh = await walletOf(you.address).sendTransaction({
+  to: maya.address,
   value: parseEther("0.6"),
 });
 await pub.waitForTransactionReceipt({ hash: fh });
@@ -51,20 +58,29 @@ const ctx = await browser.newContext({
 });
 const page = await ctx.newPage();
 
-// Node-side signer the page shim calls for eth_sendTransaction
+// Node-side signer for the page shim
 await page.exposeBinding("__signAndSend", async (_src, txJson) => {
   const tx = JSON.parse(txJson);
-  const w = wallets[tx.from.toLowerCase()];
-  const hash = await w.sendTransaction({
+  const hash = await walletOf(tx.from).sendTransaction({
     to: tx.to,
     data: tx.data,
     value: tx.value ? BigInt(tx.value) : undefined,
   });
-  console.log(`  signed ${tx.from.slice(0, 8)}… → ${hash.slice(0, 18)}…`);
+  console.log(`  tx ${tx.from.slice(0, 8)}… → ${hash.slice(0, 18)}…`);
   return hash;
 });
+await page.exposeBinding("__signMessage", async (_src, addr, message) => {
+  const account = accounts[addr.toLowerCase()];
+  const sig = await account.signMessage({
+    message: message.startsWith("0x")
+      ? { raw: message }
+      : message,
+  });
+  console.log(`  siwe signed by ${addr.slice(0, 8)}…`);
+  return sig;
+});
 
-// EIP-1193 shim + fake cursor + caption chip
+// EIP-1193 shim (handles Privy's SIWE wallet login) + cursor + captions
 await page.addInitScript(
   ({ initialAccount }) => {
     let account = initialAccount;
@@ -93,7 +109,25 @@ await page.addInitScript(
           case "eth_chainId":
             return "0x279f";
           case "wallet_switchEthereumChain":
+          case "wallet_addEthereumChain":
             return null;
+          case "personal_sign": {
+            // params: [message, address] — message may be hex or utf8
+            const [msg, addr] = params;
+            let text = msg;
+            if (typeof msg === "string" && msg.startsWith("0x")) {
+              try {
+                const bytes = msg
+                  .slice(2)
+                  .match(/.{1,2}/g)
+                  .map((b) => parseInt(b, 16));
+                text = new TextDecoder().decode(new Uint8Array(bytes));
+              } catch {
+                text = msg;
+              }
+            }
+            return window.__signMessage(addr, text);
+          }
           case "eth_sendTransaction":
             return window.__signAndSend(JSON.stringify(params[0]));
           default:
@@ -105,12 +139,11 @@ await page.addInitScript(
       account = a;
       (handlers["accountsChanged"] || []).forEach((f) => f([a]));
     };
-    // fake cursor + caption
     addEventListener("DOMContentLoaded", () => {
       const c = document.createElement("div");
       c.id = "__cursor";
       c.style.cssText =
-        "position:fixed;width:22px;height:22px;border-radius:50%;background:#c2492fcc;border:2.5px solid #fff;box-shadow:0 1px 6px #0006;pointer-events:none;z-index:99999;transform:translate(-50%,-50%);transition:left .05s,top .05s;left:-40px;top:-40px";
+        "position:fixed;width:22px;height:22px;border-radius:50%;background:#c2492fcc;border:2.5px solid #fff;box-shadow:0 1px 6px #0006;pointer-events:none;z-index:2147483647;transform:translate(-50%,-50%);transition:left .05s,top .05s;left:-40px;top:-40px";
       document.body.appendChild(c);
       addEventListener("mousemove", (e) => {
         c.style.left = e.clientX + "px";
@@ -119,7 +152,7 @@ await page.addInitScript(
       const cap = document.createElement("div");
       cap.id = "__cap";
       cap.style.cssText =
-        "position:fixed;left:24px;bottom:24px;background:#1c1a17;color:#f6f1e7;font:600 15px 'IBM Plex Mono',monospace;padding:10px 18px;border-radius:10px;z-index:99998;box-shadow:0 6px 24px #0005;max-width:520px;display:none";
+        "position:fixed;left:24px;bottom:24px;background:#1c1a17;color:#f6f1e7;font:600 15px 'IBM Plex Mono',monospace;padding:10px 18px;border-radius:10px;z-index:2147483646;box-shadow:0 6px 24px #0005;max-width:560px;display:none";
       document.body.appendChild(cap);
       window.__caption = (t) => {
         cap.textContent = t;
@@ -130,38 +163,69 @@ await page.addInitScript(
   { initialAccount: you.address }
 );
 
-const caption = (t) => page.evaluate((x) => window.__caption(x), t);
+const caption = (t) => page.evaluate((x) => window.__caption?.(x), t).catch(() => {});
 const pause = (ms) => page.waitForTimeout(ms);
 const glideClick = async (locator) => {
+  await locator.waitFor({ timeout: 20000 });
   const box = await locator.boundingBox();
   await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2, { steps: 22 });
-  await pause(350);
+  await pause(320);
   await locator.click();
 };
 const typeSlow = async (locator, text) => {
   await glideClick(locator);
-  await locator.pressSequentially(text, { delay: 55 });
+  await locator.pressSequentially(text, { delay: 50 });
 };
+
+// Privy login via the wallet path (shim signs SIWE automatically)
+async function privyLogin() {
+  await glideClick(page.getByRole("button", { name: "Sign in" }));
+  await pause(1500);
+  // Privy modal: pick the injected/browser wallet option, then MetaMask entry if listed
+  const walletBtn = page
+    .getByRole("button", { name: /metamask|browser wallet|continue with a wallet/i })
+    .first();
+  await glideClick(walletBtn);
+  await pause(1200);
+  // some flows show a second list of detected wallets
+  const detected = page.getByRole("button", { name: /metamask/i }).first();
+  if (await detected.isVisible().catch(() => false)) {
+    await glideClick(detected);
+  }
+  // SIWE prompt inside Privy modal (if shown)
+  const sign = page.getByRole("button", { name: /sign|confirm/i }).first();
+  if (await sign.isVisible().catch(() => false)) {
+    await glideClick(sign);
+  }
+  // wait until app shows the connected header chip
+  await page.locator(".account-chip").waitFor({ timeout: 40000 });
+}
+
+async function privyLogout() {
+  await glideClick(page.locator(".account-chip button.ghost"));
+  await page.getByRole("button", { name: "Sign in" }).waitFor({ timeout: 20000 });
+}
 
 // ---------------------------------------------------------------- scenes
 
 await page.goto(APP, { waitUntil: "networkidle" });
 await pause(1200);
-await caption("Tab — shared expenses that actually get settled · live on Monad Testnet");
-await pause(3200);
+await caption("TabMates — split expenses with people, not hex addresses · live on Monad");
+await pause(3000);
 
-await caption("connect your wallet");
-await glideClick(page.getByRole("button", { name: "Connect wallet" }));
-await pause(2200);
-
-await caption("1 · open a tab with your roommate");
-await typeSlow(page.getByPlaceholder("Flat 4B · Lisbon trip · Lunch crew"), "Demo House");
-await typeSlow(page.getByPlaceholder("0xabc…\n0xdef…"), roomie.address);
-await pause(500);
-await glideClick(page.getByRole("button", { name: "Open tab" }));
-await caption("every tab is a real onchain group — watch the toast");
-await page.getByText("is live onchain").waitFor({ timeout: 30000 });
+await caption("sign in — email, Google, or wallet (Privy)");
+await privyLogin();
 await pause(2000);
+
+await caption("1 · open a tab — with real names, stored onchain");
+await typeSlow(page.getByPlaceholder("Flat 4B · Lisbon trip · Lunch crew"), "Demo House");
+await typeSlow(page.getByPlaceholder("Lynn"), "Lynn");
+await typeSlow(page.getByPlaceholder("0x… wallet address"), maya.address);
+await typeSlow(page.getByPlaceholder("Name (e.g. Maya)"), "Maya");
+await pause(400);
+await glideClick(page.getByRole("button", { name: "Open tab" }));
+await page.getByText("is live onchain").waitFor({ timeout: 40000 });
+await pause(1800);
 
 await caption("2 · log what you paid for");
 await glideClick(page.getByRole("heading", { name: "Demo House" }));
@@ -170,48 +234,43 @@ await typeSlow(page.getByPlaceholder("Groceries, rent, 3am pizza…"), "Grocerie
 await typeSlow(page.getByPlaceholder("2.5"), "0.3");
 await pause(400);
 await glideClick(page.getByRole("button", { name: "Log expense" }));
-await page.getByText("split 2 ways").first().waitFor({ timeout: 30000 });
-await caption("split equally, debt recorded onchain in under a second");
-await pause(2500);
+await page.getByText("split 2 ways").first().waitFor({ timeout: 40000 });
+await caption('the ledger reads "Maya owes Lynn" — not 0xf6a5…');
+await pause(3200);
 
-await caption("your roommate now owes you 0.15 MON — the contract nets every pair");
-await pause(3000);
-
-await caption("3 · switch to your roommate's wallet…");
-await page.evaluate((a) => window.__switchAccount(a), roomie.address);
-await pause(2500);
+await caption("3 · now Maya signs in and settles up…");
+await privyLogout();
+await page.evaluate((a) => window.__switchAccount(a), maya.address);
+await pause(800);
+await privyLogin();
+await pause(1800);
 await glideClick(page.getByRole("heading", { name: "Demo House" }).first());
 await pause(1800);
 
-await caption("4 · settle up — with real MON, not a checkbox");
-const settleBtn = page.getByRole("button", { name: "settle" });
-await settleBtn.waitFor({ timeout: 15000 });
-await glideClick(settleBtn);
-await pause(800);
+await caption("4 · settle = pay — real MON, wallet to wallet, in one click");
+await glideClick(page.getByRole("button", { name: "settle" }));
+await pause(700);
 await glideClick(page.getByRole("button", { name: "pay", exact: true }));
-await caption("0.15 MON goes wallet-to-wallet through the contract…");
-await page.getByText("Paid in full").waitFor({ timeout: 30000 });
+await page.getByText("Paid in full").waitFor({ timeout: 40000 });
 await caption("PAID IN FULL — ledger and money agree, forever, onchain");
-await pause(3200);
-
-await caption("every expense & payment, straight from the chain — no backend, no indexer");
-await page.mouse.wheel(0, 500);
 await pause(3000);
 
-await caption("Tab · github.com/lynnmeanslight/tab-monad · built on Monad");
+await caption("every expense & payment straight from the chain — no backend, no indexer");
+await page.mouse.wheel(0, 520);
+await pause(2800);
+
+await caption("TabMates · github.com/lynnmeanslight/tabmates · built on Monad");
 await pause(3000);
 await caption("");
 
 await ctx.close();
 await browser.close();
 
-// return roomie's leftover MON
-const left = await pub.getBalance({ address: roomie.address });
+const left = await pub.getBalance({ address: maya.address });
 const back = left - parseEther("0.03");
 if (back > 0n) {
-  const w = createWalletClient({ account: roomie, chain: monadTestnet, transport: http() });
-  const h = await w.sendTransaction({ to: you.address, value: back });
+  const h = await walletOf(maya.address).sendTransaction({ to: you.address, value: back });
   await pub.waitForTransactionReceipt({ hash: h });
-  console.log("returned roomie float");
+  console.log("returned maya's float");
 }
 console.log("DONE — video in demo/");

@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { useAccount, useReadContract } from "wagmi";
 import { parseEther } from "viem";
 import { TAB_ADDRESS, tabAbi } from "./contract";
-import { addrHue, fmtMon, isAddress, shortAddr, timeAgo } from "./lib";
+import { addrHue, displayName, fmtMon, isAddress, shortAddr, timeAgo } from "./lib";
 import { useTx } from "./useTx";
 
 const REFETCH = { refetchInterval: 4000 } as const;
@@ -54,6 +54,15 @@ export default function TabView({ groupId, onBack }: Props) {
 
   const members = useMemo(() => (group ? [...group[3]] : []), [group]);
 
+  /** lowercase address → onchain label ("" if unset) */
+  const names = useMemo(() => {
+    const m: Record<string, string> = {};
+    if (group) group[3].forEach((a, i) => (m[a.toLowerCase()] = group[4][i]));
+    return m;
+  }, [group]);
+
+  const nameOf = (a: string) => displayName(names[a.toLowerCase()], a);
+
   const feed = useMemo(() => {
     const items: {
       ts: number;
@@ -67,7 +76,7 @@ export default function TabView({ groupId, onBack }: Props) {
         ts: Number(e.timestamp),
         kind: "expense",
         memo: e.memo,
-        detail: `${shortAddr(e.payer)} paid · split ${e.participants.length} way${
+        detail: `${nameOf(e.payer)} paid · split ${e.participants.length} way${
           e.participants.length === 1 ? "" : "s"
         }`,
         amount: e.amount,
@@ -78,12 +87,13 @@ export default function TabView({ groupId, onBack }: Props) {
         ts: Number(s.timestamp),
         kind: "paid",
         memo: "Settled up",
-        detail: `${shortAddr(s.from)} → ${shortAddr(s.to)}`,
+        detail: `${nameOf(s.from)} → ${nameOf(s.to)}`,
         amount: s.amount,
       });
     }
     return items.sort((a, b) => b.ts - a.ts).slice(0, 60);
-  }, [expenses, settlements]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expenses, settlements, names]);
 
   if (!group) return <p className="empty">Loading tab #{groupId.toString()}…</p>;
 
@@ -115,12 +125,12 @@ export default function TabView({ groupId, onBack }: Props) {
           </div>
         )}
 
-        <Members groupId={groupId} members={members} you={address} />
+        <Members groupId={groupId} members={members} names={names} you={address} />
       </div>
 
-      <Debts groupId={groupId} debts={debts} you={address} />
+      <Debts groupId={groupId} debts={debts} you={address} nameOf={nameOf} />
 
-      <AddExpense groupId={groupId} members={members} you={address} />
+      <AddExpense groupId={groupId} members={members} you={address} nameOf={nameOf} />
 
       <div className="receipt">
         <div className="receipt-head">
@@ -152,72 +162,128 @@ export default function TabView({ groupId, onBack }: Props) {
 function Members({
   groupId,
   members,
+  names,
   you,
 }: {
   groupId: bigint;
   members: string[];
+  names: Record<string, string>;
   you?: string;
 }) {
   const [adding, setAdding] = useState(false);
   const [addr, setAddr] = useState("");
+  const [label, setLabel] = useState("");
+  const [renaming, setRenaming] = useState(false);
+  const [newName, setNewName] = useState("");
   const [err, setErr] = useState("");
   const { send, isPending } = useTx();
 
   async function add() {
     setErr("");
     if (!isAddress(addr)) return setErr("That's not a wallet address.");
+    if (label.trim().length > 32) return setErr("Name must be 32 characters or fewer.");
     const ok = await send({
       functionName: "addMember",
-      args: [groupId, addr.trim()],
-      pendingText: "Adding member",
-      doneText: `${shortAddr(addr)} joined the tab`,
+      args: [groupId, addr.trim(), label.trim()],
+      pendingText: "Adding mate",
+      doneText: `${label.trim() || shortAddr(addr)} joined the tab`,
     });
     if (ok) {
       setAddr("");
+      setLabel("");
       setAdding(false);
+    }
+  }
+
+  async function rename() {
+    setErr("");
+    if (newName.trim().length > 32) return setErr("Name must be 32 characters or fewer.");
+    const ok = await send({
+      functionName: "setMemberName",
+      args: [groupId, you!, newName.trim()],
+      pendingText: "Updating your name",
+      doneText: newName.trim() ? `You're now "${newName.trim()}"` : "Name cleared",
+    });
+    if (ok) {
+      setNewName("");
+      setRenaming(false);
     }
   }
 
   return (
     <div>
-      <label>Members</label>
+      <label>Mates</label>
       <div className="member-row">
-        {members.map((m) => (
-          <span
-            className="member-chip"
-            key={m}
-            title={m}
-            onClick={() => navigator.clipboard?.writeText(m)}
-          >
-            <span className="dot" style={{ background: `hsl(${addrHue(m)} 55% 62%)` }} />
-            {shortAddr(m)}
-            {you?.toLowerCase() === m.toLowerCase() && <span className="you-badge">you</span>}
-          </span>
-        ))}
+        {members.map((m) => {
+          const isYou = you?.toLowerCase() === m.toLowerCase();
+          const label_ = names[m.toLowerCase()];
+          return (
+            <span
+              className="member-chip"
+              key={m}
+              title={isYou ? `${m} · click to rename` : `${m} · click to copy`}
+              onClick={() => {
+                if (isYou) {
+                  setRenaming(true);
+                  setNewName(label_ ?? "");
+                } else {
+                  navigator.clipboard?.writeText(m);
+                }
+              }}
+            >
+              <span className="dot" style={{ background: `hsl(${addrHue(m)} 55% 62%)` }} />
+              {displayName(label_, m)}
+              {label_ && <span className="mono-addr">{shortAddr(m)}</span>}
+              {isYou && <span className="you-badge">you</span>}
+            </span>
+          );
+        })}
         {!adding ? (
           <button className="ghost" onClick={() => setAdding(true)}>
             + add
           </button>
         ) : null}
       </div>
+
+      {renaming && (
+        <div className="mate-row" style={{ marginTop: 10 }}>
+          <input
+            placeholder="Your display name"
+            maxLength={32}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+          />
+          <button className="primary" onClick={rename} disabled={isPending}>
+            save
+          </button>
+          <button className="ghost" onClick={() => setRenaming(false)}>
+            cancel
+          </button>
+        </div>
+      )}
+
       {adding && (
-        <div className="row-2" style={{ marginTop: 10 }}>
+        <div className="mate-row" style={{ marginTop: 10 }}>
           <input
             placeholder="0x… wallet of your roommate"
             value={addr}
             onChange={(e) => setAddr(e.target.value)}
           />
-          <div style={{ display: "flex", gap: 8 }}>
-            <button className="primary" onClick={add} disabled={isPending}>
-              add
-            </button>
-            <button className="ghost" onClick={() => setAdding(false)}>
-              cancel
-            </button>
-          </div>
-          {err && <div className="error-text">{err}</div>}
+          <input
+            placeholder="Name (e.g. Maya)"
+            maxLength={32}
+            value={label}
+            onChange={(e) => setLabel(e.target.value)}
+          />
+          <button className="primary" onClick={add} disabled={isPending}>
+            add
+          </button>
+          <button className="ghost" onClick={() => setAdding(false)}>
+            cancel
+          </button>
         </div>
       )}
+      {err && <div className="error-text" style={{ marginTop: 6 }}>{err}</div>}
     </div>
   );
 }
@@ -228,10 +294,12 @@ function Debts({
   groupId,
   debts,
   you,
+  nameOf,
 }: {
   groupId: bigint;
   debts?: readonly [readonly string[], readonly string[], readonly bigint[]];
   you?: string;
+  nameOf: (a: string) => string;
 }) {
   const [settling, setSettling] = useState<number | null>(null);
   const [amount, setAmount] = useState("");
@@ -263,8 +331,8 @@ function Debts({
       functionName: "settle",
       args: [groupId, edge.creditor],
       value,
-      pendingText: `Sending ${fmtMon(value)} MON to ${shortAddr(edge.creditor)}`,
-      doneText: `Paid ${fmtMon(value)} MON to ${shortAddr(edge.creditor)} — debt updated`,
+      pendingText: `Sending ${fmtMon(value)} MON to ${nameOf(edge.creditor)}`,
+      doneText: `Paid ${fmtMon(value)} MON to ${nameOf(edge.creditor)} — debt updated`,
     });
     if (ok) {
       setSettling(null);
@@ -291,13 +359,13 @@ function Debts({
             <div className="debt-row" key={`${e.debtor}-${e.creditor}`}>
               <span className="who">
                 <span className="dot" style={{ background: `hsl(${addrHue(e.debtor)} 55% 62%)` }} />
-                {yours ? "you" : shortAddr(e.debtor)}
+                {yours ? "you" : nameOf(e.debtor)}
                 <span className="arrow">owes →</span>
                 <span
                   className="dot"
                   style={{ background: `hsl(${addrHue(e.creditor)} 55% 62%)` }}
                 />
-                {you?.toLowerCase() === e.creditor.toLowerCase() ? "you" : shortAddr(e.creditor)}
+                {you?.toLowerCase() === e.creditor.toLowerCase() ? "you" : nameOf(e.creditor)}
               </span>
 
               <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -357,10 +425,12 @@ function AddExpense({
   groupId,
   members,
   you,
+  nameOf,
 }: {
   groupId: bigint;
   members: string[];
   you?: string;
+  nameOf: (a: string) => string;
 }) {
   const [memo, setMemo] = useState("");
   const [amount, setAmount] = useState("");
@@ -437,7 +507,7 @@ function AddExpense({
                   title={m}
                 >
                   <span className="dot" style={{ background: `hsl(${addrHue(m)} 55% 62%)` }} />
-                  {you?.toLowerCase() === m.toLowerCase() ? "you" : shortAddr(m)}
+                  {you?.toLowerCase() === m.toLowerCase() ? "you" : nameOf(m)}
                 </span>
               );
             })}
