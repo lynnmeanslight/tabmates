@@ -1,0 +1,105 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,700;0,9..144,900;1,9..144,500&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; box-sizing:border-box; }
+  :root {
+    --paper:#f6f1e7; --card:#fffdf8; --ink:#1c1a17; --ink-soft:#5c554a;
+    --ink-faint:#8d8577; --line:#e3dac9; --accent:#c2492f; --accent-dark:#9d3a25;
+    --green:#2e7d4f; --green-bg:#e5f0e8;
+  }
+  #cover {
+    width:1280px; height:720px; position:relative; overflow:hidden;
+    background:var(--paper);
+    background-image:radial-gradient(#00000009 1.2px, transparent 1.2px);
+    background-size:22px 22px;
+    font-family:"IBM Plex Mono", monospace; color:var(--ink);
+    display:flex; align-items:center; padding:0 84px;
+  }
+  /* left: brand */
+  .left { width:56%; }
+  .left .mark { width:126px; height:126px; transform:rotate(-4deg); margin-bottom:10px; }
+  h1 {
+    font-family:"Fraunces", Georgia, serif; font-weight:900; font-size:118px;
+    letter-spacing:-0.02em; line-height:1.02;
+  }
+  .tagline {
+    margin-top:10px; font-size:15px; letter-spacing:0.2em; text-transform:uppercase;
+    color:var(--ink-faint);
+  }
+  .hook {
+    margin-top:26px; font-family:"Fraunces", Georgia, serif; font-style:italic;
+    font-weight:500; font-size:31px; color:var(--ink);
+  }
+  .hook b { font-style:normal; font-weight:900; color:var(--accent); }
+  .sub { margin-top:20px; font-size:15.5px; color:var(--ink-soft); }
+  /* right: receipt */
+  .receipt {
+    margin-left:auto; width:380px; background:var(--card);
+    border:2px solid var(--ink); border-radius:14px;
+    box-shadow:8px 8px 0 var(--accent);
+    transform:rotate(2.2deg);
+    padding:26px 26px 30px; font-size:15px;
+  }
+  .receipt .head {
+    font-weight:600; letter-spacing:0.12em; text-transform:uppercase;
+    display:flex; justify-content:space-between; color:var(--ink);
+  }
+  .receipt .head span:last-child { color:var(--ink-faint); }
+  .rule { border-top:2px dashed var(--line); margin:16px 0; }
+  .row { display:flex; justify-content:space-between; margin:12px 0; color:var(--ink-soft); }
+  .row .amt { color:var(--ink); font-weight:600; }
+  .row.small { font-size:13px; color:var(--ink-faint); margin-top:-8px; }
+  .owe { display:flex; justify-content:space-between; font-weight:600; color:var(--ink); }
+  .owe .amt { color:var(--accent); }
+  .settled {
+    margin-top:18px; background:var(--green-bg); color:var(--green);
+    border-radius:999px; padding:9px 14px; font-size:13.5px; font-weight:600;
+    display:flex; align-items:center; gap:8px; justify-content:center;
+  }
+  .settled .tick {
+    width:18px; height:18px; border-radius:50%; background:var(--green); color:#fff;
+    font-size:12px; display:flex; align-items:center; justify-content:center;
+  }
+  .foot {
+    position:absolute; left:84px; bottom:36px; right:84px;
+    display:flex; justify-content:space-between;
+    font-size:13.5px; color:var(--ink-faint);
+  }
+  .foot .pill {
+    border:1.5px solid var(--line); background:var(--card);
+    padding:4px 12px; border-radius:999px; margin-left:8px;
+  }
+</style>
+</head>
+<body>
+<div id="cover">
+  <div class="left">
+    <img class="mark" src="../web/public/icon.svg">
+    <h1>TabMates</h1>
+    <div class="tagline">The roommate ledger on Monad</div>
+    <div class="hook">Split the bill. <b>Actually settle it.</b></div>
+    <div class="sub">names you know · debts that net onchain ·<br>settle-up that really pays, in one click</div>
+  </div>
+
+  <div class="receipt">
+    <div class="head"><span>Flat 4B — tab</span><span>#4</span></div>
+    <div class="rule"></div>
+    <div class="row"><span>Groceries</span><span class="amt">0.4 MON</span></div>
+    <div class="row small"><span>paid by Alice · split 2 ways</span></div>
+    <div class="row"><span>Internet bill</span><span class="amt">0.2 MON</span></div>
+    <div class="row small"><span>paid by Bob · split 2 ways</span></div>
+    <div class="rule"></div>
+    <div class="owe"><span>Bob owes Alice</span><span class="amt">0.1 MON</span></div>
+    <div class="settled"><span class="tick">✓</span> settled onchain — real MON, wallet-to-wallet</div>
+  </div>
+
+  <div class="foot">
+    <span>lynnmeanslight.github.io/tabmates</span>
+    <span><span class="pill">Monad mainnet</span><span class="pill">no custody</span><span class="pill">email sign-in</span></span>
+  </div>
+</div>
+</body>
+</html>
