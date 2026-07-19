@@ -1,5 +1,5 @@
 // Records the TabMates demo video: drives the LIVE hosted app with two funded
-// testnet wallets (you + Maya), performing real onchain transactions on camera.
+// mainnet wallets (you + Maya), performing real onchain transactions on camera.
 // Privy auth is done via the "browser wallet" path — the injected shim signs
 // SIWE messages and transactions with real keys through viem.
 // Usage: DEPLOYER_KEY=0x... node scripts/record-demo.mjs
@@ -13,22 +13,23 @@ import {
 } from "viem";
 import { privateKeyToAccount, generatePrivateKey } from "viem/accounts";
 import { homedir } from "node:os";
+import { writeFileSync } from "node:fs";
 
 const APP = "https://lynnmeanslight.github.io/tabmates/";
 const CHROME = `${homedir()}/Library/Caches/ms-playwright/chromium-1208/chrome-mac-arm64/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing`;
 
-const monadTestnet = defineChain({
-  id: 10143,
-  name: "Monad Testnet",
+const monad = defineChain({
+  id: 143,
+  name: "Monad",
   nativeCurrency: { name: "MON", symbol: "MON", decimals: 18 },
-  rpcUrls: { default: { http: ["https://testnet-rpc.monad.xyz"] } },
+  rpcUrls: { default: { http: ["https://rpc.monad.xyz"] } },
 });
 
 const you = privateKeyToAccount(process.env.DEPLOYER_KEY);
 const mayaKey = generatePrivateKey();
 const maya = privateKeyToAccount(mayaKey);
 
-const pub = createPublicClient({ chain: monadTestnet, transport: http() });
+const pub = createPublicClient({ chain: monad, transport: http() });
 const accounts = {
   [you.address.toLowerCase()]: you,
   [maya.address.toLowerCase()]: maya,
@@ -36,7 +37,7 @@ const accounts = {
 const walletOf = (addr) =>
   createWalletClient({
     account: accounts[addr.toLowerCase()],
-    chain: monadTestnet,
+    chain: monad,
     transport: http(),
   });
 
@@ -61,10 +62,18 @@ const page = await ctx.newPage();
 // Node-side signer for the page shim
 await page.exposeBinding("__signAndSend", async (_src, txJson) => {
   const tx = JSON.parse(txJson);
+  // pad gas 1.5×: Monad mainnet's raw estimate can out-of-gas at execution
+  const estimated = await pub.estimateGas({
+    account: tx.from,
+    to: tx.to,
+    data: tx.data,
+    value: tx.value ? BigInt(tx.value) : undefined,
+  });
   const hash = await walletOf(tx.from).sendTransaction({
     to: tx.to,
     data: tx.data,
     value: tx.value ? BigInt(tx.value) : undefined,
+    gas: (estimated * 15n) / 10n,
   });
   console.log(`  tx ${tx.from.slice(0, 8)}… → ${hash.slice(0, 18)}…`);
   return hash;
@@ -100,7 +109,7 @@ await page.addInitScript(
     let account = initialAccount;
     const handlers = {};
     const rpc = async (method, params) => {
-      const res = await fetch("https://testnet-rpc.monad.xyz", {
+      const res = await fetch("https://rpc.monad.xyz", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ jsonrpc: "2.0", id: Date.now(), method, params }),
@@ -121,7 +130,7 @@ await page.addInitScript(
           case "eth_accounts":
             return [account];
           case "eth_chainId":
-            return "0x279f";
+            return "0x8f";
           case "wallet_switchEthereumChain":
           case "wallet_addEthereumChain":
           case "wallet_watchAsset":
@@ -207,7 +216,12 @@ await page.addInitScript(
   { initialAccount: you.address }
 );
 
-const caption = (t) => page.evaluate((x) => window.__caption?.(x), t).catch(() => {});
+const timeline = [];
+let t0 = Date.now();
+const caption = (t) => {
+  timeline.push({ label: t, t: +((Date.now() - t0) / 1000).toFixed(2) });
+  return page.evaluate((x) => window.__caption?.(x), t).catch(() => {});
+};
 const pause = (ms) => page.waitForTimeout(ms);
 const glideClick = async (locator) => {
   await locator.waitFor({ timeout: 20000 });
@@ -253,6 +267,7 @@ async function privyLogout() {
 // ---------------------------------------------------------------- scenes
 
 await page.goto(APP, { waitUntil: "domcontentloaded" });
+t0 = Date.now(); // video capture starts with the page — clock the timeline from here
 await page.getByRole("button", { name: "Sign in" }).waitFor({ timeout: 30000 });
 await pause(1500);
 await caption("TabMates — split expenses with people, not hex addresses · live on Monad");
@@ -273,7 +288,7 @@ await page.getByText("is live onchain").waitFor({ timeout: 40000 });
 await pause(1800);
 
 await caption("2 · log what you paid for");
-await glideClick(page.getByRole("heading", { name: "Demo House" }));
+await glideClick(page.getByRole("heading", { name: "Demo House", exact: true }).last());
 await pause(1500);
 await typeSlow(page.getByPlaceholder("Groceries, rent, 3am pizza…"), "Groceries");
 await typeSlow(page.getByPlaceholder("2.5"), "0.3");
@@ -289,7 +304,7 @@ await page.evaluate((a) => window.__switchAccount(a), maya.address);
 await pause(800);
 await privyLogin();
 await pause(1800);
-await glideClick(page.getByRole("heading", { name: "Demo House" }).first());
+await glideClick(page.getByRole("heading", { name: "Demo House", exact: true }).last());
 await pause(1800);
 
 await caption("4 · settle = pay — real MON, wallet to wallet, in one click");
@@ -307,6 +322,9 @@ await pause(2800);
 await caption("TabMates · github.com/lynnmeanslight/tabmates · built on Monad");
 await pause(3000);
 await caption("");
+
+timeline.push({ label: "__end", t: +((Date.now() - t0) / 1000).toFixed(2) });
+writeFileSync("demo/timeline.json", JSON.stringify(timeline, null, 2));
 
 await ctx.close();
 await browser.close();
