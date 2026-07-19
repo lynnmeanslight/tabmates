@@ -21,6 +21,7 @@ createRoot(document.getElementById("root")!).render(
         appearance: {
           theme: "light",
           accentColor: "#c2492f",
+          logo: "https://lynnmeanslight.github.io/tabmates/privy-logo.png",
           landingHeader: "TabMates",
           loginMessage: "Split the bill. Actually settle it.",
         },

@@ -53,6 +53,7 @@ export default function App() {
     <ToastCtx.Provider value={setToast}>
       <header className="topbar">
         <div className="brand" onClick={() => setOpenTab(null)}>
+          <img className="mark" src={`${import.meta.env.BASE_URL}icon.svg`} alt="" />
           <h1>TabMates</h1>
           <span className="tagline">the roommate ledger on Monad</span>
         </div>
@@ -127,7 +128,7 @@ function Hero({
 
   return (
     <div className="hero">
-      <div className="stamp">TM</div>
+      <img className="stamp-mark" src={`${import.meta.env.BASE_URL}icon.svg`} alt="TabMates" />
       <h2>Split the bill. Actually settle it.</h2>
       <p>
         Every shared-expense app ends the same way: the ledger says "you owe

@@ -1,1 +1,1 @@
-{"root":["./src/app.tsx","./src/home.tsx","./src/tabview.tsx","./src/contract.ts","./src/lib.ts","./src/main.tsx","./src/usetx.ts","./src/wagmi.ts"],"version":"5.6.3"}
+{"root":["./src/app.tsx","./src/home.tsx","./src/tabview.tsx","./src/contract.ts","./src/lib.ts","./src/main.tsx","./src/usetx.ts","./src/vite-env.d.ts","./src/wagmi.ts"],"version":"5.6.3"}

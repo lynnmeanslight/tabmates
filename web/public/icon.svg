@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- TabMates mark: a receipt that actually gets settled.
+       Palette matches the app: ink #1c1a17, card #fffdf8, accent #c2492f. -->
+  <g>
+    <!-- hard offset shadow, same brutalist style as the UI -->
+    <path
+      d="M34 16 H86 Q94 16 94 24 V94 l-8.5 8 -8.5 -8 -8.5 8 -8.5 -8 -8.5 8 -8.5 -8 -8.5 8 -8.5 -8 V24 Q26 16 34 16 Z"
+      transform="translate(7 7)"
+      fill="#c2492f"
+    />
+    <!-- receipt card -->
+    <path
+      d="M34 16 H86 Q94 16 94 24 V94 l-8.5 8 -8.5 -8 -8.5 8 -8.5 -8 -8.5 8 -8.5 -8 -8.5 8 -8.5 -8 V24 Q26 16 34 16 Z"
+      fill="#fffdf8"
+      stroke="#1c1a17"
+      stroke-width="5"
+    />
+    <!-- ledger entries -->
+    <path d="M40 40 H80" stroke="#1c1a17" stroke-width="6" stroke-linecap="round" />
+    <path d="M40 56 H64" stroke="#1c1a17" stroke-width="6" stroke-linecap="round" />
+    <!-- settled. -->
+    <path
+      d="M40 75 L50 85 L74 61"
+      fill="none"
+      stroke="#c2492f"
+      stroke-width="9"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  </g>
+</svg>
